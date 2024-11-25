@@ -1,0 +1,206 @@
+---
+title: "HIV EHE DiD 2014-2021"
+output: html_document
+date: '2023-10-11'
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(rgdal)
+library(readxl)
+library(ggrepel)
+library(extrafont)
+setwd("/Users/rgupta97/Documents/Lab_Work")
+
+```
+
+
+```{r read in}
+#This data has been manually extracted from the Puerto Rico HIV Lit Review 20220126 XLS file
+df_raw <- read_excel("HIV EHE Data.xlsx", sheet = "Compiled")
+
+```
+
+```{r build dataframe}
+#Creates divide of whether city is a case (1) or control (0)
+
+df_MSA_only <- df_raw[!is.na(df_raw$`EHE MSA Top Level`),] #To be used if not including MSA divisions
+
+df_raw <- df_raw[is.na(df_raw$`Not Included`),] #To be used if using MSA divisions where included
+
+df_raw$case <- (df_raw$`EHE Full` == "Y" | df_raw$`EHE Partial` == "Y" | df_raw$`EHE State` == "Y")
+df_raw$case <- replace(df_raw$case, is.na(df_raw$case),0)
+
+
+build_df <- function(existing_df,df_raw,year,incidence){
+  df_temp <- data.frame(city = df_raw$City, year = rep(year,nrow(df_raw)), t = rep(max(existing_df$t) + 1, nrow(df_raw)), case = df_raw$case, inc = incidence)
+  existing_df <- rbind(df_temp,existing_df)
+  return(existing_df)
+}
+
+df_ehe <- data.frame(city = df_raw$City, year = 2014, t = 1, case = df_raw$case, inc = df_raw$`2014 Incidence`) #2014
+df_ehe <- build_df(df_ehe, df_raw, 2015, df_raw$`Incidence 2015`) #2015
+df_ehe <- build_df(df_ehe, df_raw, 2016, df_raw$`Incidence 2016`) #2016
+df_ehe <- build_df(df_ehe, df_raw, 2017, df_raw$`Incidence 2017`) #2017
+df_ehe <- build_df(df_ehe, df_raw, 2018, df_raw$`Incidence 2018`) #2018
+df_ehe <- build_df(df_ehe, df_raw, 2019, df_raw$`Incidence 2019`) #2019
+df_ehe <- build_df(df_ehe, df_raw, 2020, df_raw$`Incidence 2020`) #2020
+df_ehe <- build_df(df_ehe, df_raw, 2021, df_raw$`Incidence 2021`) #2021
+
+df_ehe$intervention <- (df_ehe$year >= 2020 & df_ehe$case == 1) #DEFINES YEAR OF INTERVENTION (2019 or 2020)
+
+df_ehe$inc <- as.numeric(df_ehe$inc)
+df_ehe$intervention <- as.numeric(df_ehe$intervention)
+```
+
+```{r plots}
+df_ehe$labels <- df_ehe$city
+df_ehe$labels[df_ehe$year != 2021] <- NA
+df_ehe$labels[df_ehe$inc < 19.8] <- NA
+
+#FIGURE OF HIV DIAGNOSTIC RATE OVER TIME AT MSA LEVEL WITH LABELS
+png("city level trend in incidence over time EHE3.png", units = "in", width = 12, height = 5.5, res = 450)
+plot_incRate_ehe_city <- ggplot(df_ehe, aes(x=year, y = inc, group = city)) +
+  geom_smooth(aes(color = case),se=F, size = 0.6) +
+  geom_text(data=df_ehe[df_ehe$year == 2021,] %>%
+              group_by(city) %>% arrange(desc(inc)) %>% slice(1) %>% filter(inc >= 19.8),
+            aes(x = year + 0.03, label = city, hjust = 0)) +
+  geom_vline(xintercept = 2019) +
+  theme_bw() +
+  labs(x = "Year", y = "Diagnostic rate (per 10,000 person-years)") + theme(legend.position = "none") + ylim(0,60) +
+  theme(text = element_text(family="Times New Roman"),
+        axis.text = element_text(size=11),
+        axis.title = element_text(size=12, face="bold"))
+  plot_incRate_ehe_city
+dev.off()
+
+#FIGURE OF HIV DIAGNOSTIC RATE OVER TIME AT MSA LEVEL WITH LABELS
+png("trend in incidence over time EHE 20240901 labels.jpg", units = "in", width = 12, height = 5.5, res = 450)
+plot_incRate_ehe_city <- ggplot(df_ehe, aes(x=year, y = inc, group = city)) +
+  geom_smooth(aes(color = as.factor(case)),se=F, size = 0.6) +
+  geom_label_repel(aes(label = labels), alpha = 0.75, size = 3.45,
+                   na.rm = TRUE, max.overlaps = Inf, segment.color = "green",
+                   min.segment.length=0, nudge_y = 30, nudge_x = 5, vjust = 0) +
+  geom_vline(xintercept = 2019) +
+  theme_bw() +
+  scale_color_manual(values = c("#E69F00","#0072B2"),
+                     name = "MSAs", labels = c("Non-EHE Region","EHE Region")) +
+  labs(x = "Year", y = "Diagnostic rate (per 100,000 person-years)") + ylim(0,60) +
+  theme(text = element_text(family="Times New Roman"), axis.text = element_text(size=17),
+        axis.title = element_text(size=18, face="bold"), legend.title = element_text(size=17, face="bold"),
+        legend.text = element_text(size=15))
+  plot_incRate_ehe_city
+dev.off()
+
+#FIGURE OF HIV DIAGNOSTIC RATE OVER TIME AT MSA LEVEL WITHOUT LABELS
+setEPS()
+postscript("trend_in_incidence_over_time_EHE_20240901.eps", width = 12, height = 5.5, family = "Times")
+plot_incRate_ehe_city <- ggplot(df_ehe, aes(x = year, y = inc, group = city)) +
+  geom_smooth(aes(color = as.factor(case), linetype = as.factor(case)), se = FALSE, size = 0.6) +
+  geom_vline(xintercept = 2019) +
+  theme_bw() +
+  scale_color_manual(values = c("gray10", "gray40"), 
+                     name = "MSAs", labels = c("Non-EHE Region", "EHE Region")) +
+  scale_linetype_manual(values = c("solid", "dashed"), 
+                        name = "MSAs", labels = c("Non-EHE Region", "EHE Region")) +
+  labs(x = "Year", y = "Diagnostic rate (per 100,000 person-years)") + ylim(0, 60) +
+  theme(text = element_text(family = "Times New Roman"), axis.text = element_text(size = 17),
+        axis.title = element_text(size = 18, face = "bold"), legend.title = element_text(size = 17, face = "bold"),
+        legend.text = element_text(size = 15))
+print(plot_incRate_ehe_city)
+dev.off()
+
+pdf("trend_in_incidence_over_time_EHE_20240901.pdf", width = 12, height = 5.5, family = "serif")
+plot_incRate_ehe_city <- ggplot(df_ehe, aes(x = year, y = inc, group = city)) +
+  geom_smooth(aes(color = as.factor(case), linetype = as.factor(case)), se = FALSE, size = 0.6) +
+  geom_vline(xintercept = 2019) +
+  theme_bw() +
+  scale_color_manual(values = c("gray10", "gray40"), 
+                     name = "MSAs", labels = c("Non-EHE Region", "EHE Region")) +
+  scale_linetype_manual(values = c("solid", "dashed"), 
+                        name = "MSAs", labels = c("Non-EHE Region", "EHE Region")) +
+  labs(x = "Year", y = "Diagnostic rate (per 100,000 person-years)") + ylim(0,60) +
+  theme(text = element_text(family="serif"), axis.text = element_text(size=17),
+        axis.title = element_text(size=18, face="bold"), legend.title = element_text(size=17, face="bold"),
+        legend.text = element_text(size=15))
+print(plot_incRate_ehe_city)
+dev.off()
+
+#Dataframe for figure below: DF duplicated to create a "total" entry.
+df_ehe2 <- df_ehe
+df_ehe2$case <- 2
+df_ehe2 <- rbind(df_ehe2,df_ehe)
+
+#FIGURE OF HIV DIAGNOSTIC RATE OVER TIME GROUPED by EHE INCLUSION
+setEPS()
+postscript("incidence_over_time_stratified_by_ehe_status_20240826.eps", width = 12, height = 5.5, family = "Times")
+plot_incRate_ehe_case <- ggplot(df_ehe2, aes(x = year, y = inc, group = factor(case))) +
+  geom_smooth(aes(color = factor(case), lty = factor(case)), se = TRUE, size = 0.9) +
+  geom_vline(xintercept = 2019) +
+  theme_bw() +
+  scale_linetype_manual(values = c("dotdash", "twodash", "solid"),
+                        name = "MSAs", labels = c("Non-EHE Region", "EHE Region", "Total")) +
+  scale_color_manual(values = c("gray10", "gray30", "gray50"),
+                     name = "MSAs", labels = c("Non-EHE Region", "EHE Region", "Total")) +
+  labs(x = "Year", y = "Diagnostic rate (per 100,000 person-years)") + ylim(0, 60) +
+  theme(text = element_text(family = "Times New Roman"), axis.text = element_text(size = 17),
+        axis.title = element_text(size = 18, face = "bold"), legend.title = element_text(size = 17, face = "bold"),
+        legend.text = element_text(size = 15))
+print(plot_incRate_ehe_case)
+dev.off()
+
+pdf("incidence_over_time_stratified_by_ehe_status_20240826.pdf", width = 12, height = 5.5, family = "serif")
+plot_incRate_ehe_case <- ggplot(df_ehe2, aes(x = year, y = inc, group = factor(case))) +
+  geom_smooth(aes(color = factor(case), lty = factor(case)), se = TRUE, size = 0.9) +
+  geom_vline(xintercept = 2019) +
+  theme_bw() +
+  scale_linetype_manual(values = c("dotdash", "twodash", "solid"),
+                        name = "MSAs", labels = c("Non-EHE Region", "EHE Region", "Total")) +
+  scale_color_manual(values = c("gray10", "gray30", "gray50"),
+                     name = "MSAs", labels = c("Non-EHE Region", "EHE Region", "Total")) +
+  labs(x = "Year", y = "Diagnostic rate (per 100,000 person-years)") + ylim(0,60) +
+  theme(text = element_text(family="serif"), axis.text = element_text(size=17),
+        axis.title = element_text(size=18, face="bold"), legend.title = element_text(size=17, face="bold"),
+        legend.text = element_text(size=15))
+print(plot_incRate_ehe_case)
+dev.off()
+```
+
+```{r DiD models}
+
+ df_ehe2 <- df_ehe[df_ehe$year > 2015,]
+ df_ehe2$t <- df_ehe2$t - 2
+
+glm_did <- glm(inc ~ t*intervention, data = df_ehe, family=gaussian(identity))
+summary(glm_did)
+confint(glm_did)
+```
+
+```{r temporal models}
+
+# df_ehe2 <- df_ehe[df_ehe$year > 2015,]
+# df_ehe2$t <- df_ehe2$t - 2
+
+glm_temporal <- glm(inc ~ t + case, data = df_ehe, family=gaussian(identity))
+summary(glm_temporal)
+```
+
+```
+https://www.publichealth.columbia.edu/research/population-health-methods/difference-difference-estimation
+
+Interpretation of the regression results (2020):
+1. T: There is a statisticaly significant decrease in the incidence rate of HIV over time in the control group.
+2. Intervention: There is no statistical difference in the baseline HIV incidence between cities covered by and cities not covered by EHE policies in 2014.
+3. t * intervention: There may be a mild difference in the rate of change of HIV incidence over time between between cities covered by EHE and those not.
+
+Interpretation of the regression results (2019):
+1. t: There is a statisticaly significant decrease in the incidence rate of HIV over time in the control group.
+2. Intervention: There is no statistical difference in the baseline HIV incidence between cities covered by and cities not covered by EHE policies in 2014.
+3. t * intervention: There is no difference in the rate of change of HIV incidence over time between between cities covered by EHE and those not.
+```
+
+```{r}
+mean(df_ehe$inc[df_ehe$case == 1 & df_ehe$year == 2021]) + (1.96*sd(df_ehe$inc[df_ehe$case == 1 & df_ehe$year == 2021])/sqrt(length(df_ehe$inc[df_ehe$case == 1 & df_ehe$year == 2021])))
+
+```
